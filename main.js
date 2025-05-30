@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
@@ -18,6 +19,14 @@ camera.position.z = 5;
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
+
+const controls = new PointerLockControls(camera, document.body);
+
+document.addEventListener("click", () => {
+  controls.lock();
+});
+
+scene.add(controls.object);
 
 function animate() {
   cube.rotation.x += 0.01;
