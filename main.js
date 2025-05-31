@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { Vector3 } from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
+import { EdgesGeometry, LineSegments, LineBasicMaterial } from "three";
 
 function init() {
   let scene, camera, renderer, cube;
@@ -12,149 +12,186 @@ function init() {
   let prevTime = performance.now();
   const velocity = new THREE.Vector3();
   const direction = new THREE.Vector3();
-  const vertex = new THREE.Vector3();
-  const color = new THREE.Color();
   const objects = [];
 
-  const onKeyDown = function (event) {
+  const playerBox = new THREE.Box3();
+  const objectBox = new THREE.Box3();
+
+  document.addEventListener("keydown", onKeyDown);
+  document.addEventListener("keyup", onKeyUp);
+
+  function onKeyDown(event) {
     switch (event.code) {
-      case "ArrowUp":
       case "KeyW":
         moveForward = true;
         break;
-
-      case "ArrowLeft":
       case "KeyA":
         moveLeft = true;
         break;
-
-      case "ArrowDown":
       case "KeyS":
         moveBackward = true;
         break;
-
-      case "ArrowRight":
       case "KeyD":
         moveRight = true;
         break;
-
       case "Space":
-        if (canJump === true) velocity.y += 350;
+        if (canJump) velocity.y += 350;
         canJump = false;
         break;
     }
-  };
+  }
 
-  const onKeyUp = function (event) {
+  function onKeyUp(event) {
     switch (event.code) {
-      case "ArrowUp":
       case "KeyW":
         moveForward = false;
         break;
-
-      case "ArrowLeft":
       case "KeyA":
         moveLeft = false;
         break;
-
-      case "ArrowDown":
       case "KeyS":
         moveBackward = false;
         break;
-
-      case "ArrowRight":
       case "KeyD":
         moveRight = false;
         break;
     }
-  };
+  }
 
-  document.addEventListener("keydown", (event) => onKeyDown(event));
-  document.addEventListener("keyup", (event) => onKeyUp(event));
-
-  const raycaster = new THREE.Raycaster(
-    new THREE.Vector3(),
-    new THREE.Vector3(0, -1, 0),
-    0,
-    10
-  );
-
+  // Scene
   scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x222222);
+
   camera = new THREE.PerspectiveCamera(
     75,
     window.innerWidth / window.innerHeight,
     0.1,
     1000
   );
-  camera.position.z = 5;
-  const geometry = new THREE.BoxGeometry(1, 1, 1);
-  const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-  cube = new THREE.Mesh(geometry, material);
-  scene.add(cube);
+  camera.position.set(0, 20, -30);
 
-  renderer = new THREE.WebGLRenderer();
+  renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.physicallyCorrectLights = true;
   document.body.appendChild(renderer.domElement);
 
+  // Controls
   const controls = new PointerLockControls(camera, document.body);
+  document.addEventListener("click", () => controls.lock());
+  scene.add(controls.getObject());
 
-  document.addEventListener("click", () => {
-    controls.lock();
-  });
+  // Lighting (brighter)
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // brighter ambient
+  scene.add(ambientLight);
 
-  scene.add(controls.object);
-  renderer.setAnimationLoop(animate);
+  const pointLight = new THREE.PointLight(0xffffff, 1.5, 100); // brighter key light
+  pointLight.position.set(0, 15, 0);
+  pointLight.castShadow = true;
+  pointLight.shadow.mapSize.set(1024, 1024);
+  scene.add(pointLight);
 
-  function animate() {
+  const fillLight = new THREE.PointLight(0xaaaaff, 0.6, 100);
+  fillLight.position.set(20, 10, 10);
+  scene.add(fillLight);
+
+  // Floor
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(200, 200),
+    new THREE.MeshStandardMaterial({ color: 0x444444 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+  objects.push(floor);
+
+  // Room
+  const roomSize = 50;
+  const room = new THREE.Mesh(
+    new THREE.BoxGeometry(roomSize, roomSize, roomSize),
+    new THREE.MeshStandardMaterial({ color: 0x8888aa, side: THREE.BackSide })
+  );
+  scene.add(room);
+  objects.push(room);
+
+  // Room edges
+  const edges = new EdgesGeometry(
+    new THREE.BoxGeometry(roomSize, roomSize, roomSize)
+  );
+  const line = new LineSegments(
+    edges,
+    new LineBasicMaterial({ color: 0x000000 })
+  );
+  scene.add(line);
+
+  // Cube obstacle
+  cube = new THREE.Mesh(
+    new THREE.BoxGeometry(5, 5, 5),
+    new THREE.MeshStandardMaterial({ color: 0x00ff00 })
+  );
+  cube.position.set(0, 2.5, -10);
+  cube.castShadow = true;
+  cube.receiveShadow = true;
+  scene.add(cube);
+  objects.push(cube);
+
+  // Animation loop
+  renderer.setAnimationLoop(() => {
     const time = performance.now();
+    const delta = (time - prevTime) / 1000;
 
     if (controls.isLocked === true) {
-      // game paused if not clicked on
-      raycaster.ray.origin.copy(controls.object.position);
-      raycaster.ray.origin.y -= 10;
-
-      const intersections = raycaster.intersectObjects(objects, false);
-
-      const onObject = intersections.length > 0;
-
-      const delta = (time - prevTime) / 1000;
-
+      // Gravity
       velocity.x -= velocity.x * 10.0 * delta;
       velocity.z -= velocity.z * 10.0 * delta;
-
-      velocity.y -= 9.8 * 100.0 * delta; // 100.0 = mass
+      velocity.y -= 9.8 * 100.0 * delta;
 
       direction.z = Number(moveForward) - Number(moveBackward);
       direction.x = Number(moveRight) - Number(moveLeft);
-      direction.normalize(); // this ensures consistent movements in all directions
+      direction.normalize();
 
       if (moveForward || moveBackward)
         velocity.z -= direction.z * 400.0 * delta;
       if (moveLeft || moveRight) velocity.x -= direction.x * 400.0 * delta;
 
-      if (onObject === true) {
-        velocity.y = Math.max(0, velocity.y);
+      // Save original position
+      const oldPosition = controls.getObject().position.clone();
+
+      // Apply movement
+      controls.moveRight(-velocity.x * delta);
+      controls.moveForward(-velocity.z * delta);
+      controls.getObject().position.y += velocity.y * delta;
+
+      // Basic ground check
+      if (controls.getObject().position.y < 20) {
+        velocity.y = 0;
+        controls.getObject().position.y = 20;
         canJump = true;
       }
 
-      controls.moveRight(-velocity.x * delta);
-      controls.moveForward(-velocity.z * delta);
+      // Collision detection
+      playerBox.setFromCenterAndSize(
+        controls.getObject().position,
+        new THREE.Vector3(1, 4, 1)
+      );
 
-      controls.object.position.y += velocity.y * delta; // new behavior
-
-      if (controls.object.position.y < 0) {
-        velocity.y = 0;
-        controls.object.position.y = 0;
-
-        canJump = true;
+      for (let i = 0; i < objects.length; i++) {
+        objectBox.setFromObject(objects[i]);
+        if (playerBox.intersectsBox(objectBox)) {
+          controls.getObject().position.copy(oldPosition); // simple resolution
+          velocity.x = 0;
+          velocity.z = 0;
+          break;
+        }
       }
     }
 
     prevTime = time;
-    cube.rotation.x += 0.01;
+
     cube.rotation.y += 0.01;
     renderer.render(scene, camera);
-  }
+  });
 }
 
 init();
